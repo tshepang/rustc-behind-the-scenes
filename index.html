@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>steps behind producing a Rust executable</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+    <link rel="stylesheet" type="text/css" href="styles.css">
+  </head>
+  <body>
+    <textarea id="source">
+class: middle, center
+
+# behind the scenes of producing an executable
+
+Tshepang Lekhonkhobe
+
+@tshepang_dev
+
+???
+
+I proposed this talk knowing that it was rather ambitious for me
+actually, considering I've never worked with compilers before.
+
+And indeed at this point there's some details that aren't exactly clear to
+me.
+
+So, if it turns out I got stuff not quite right (or just utterly
+wrong), please say something after the talk... I will be happy to
+learn.
+
+***
+
+Interestingly, I spend some time yesterday talking to 2 people who
+understand these things thoroughly... one was on a V8 team at Google,
+and another is an expert on Rust macros.
+
+They happened to actually talk this stuff, and of course I
+felt inadequate... they should be the ones giving this talk.
+I was also honored to be in the presence of such,
+and which I understood everything they said.
+
+---
+class: middle, left
+
+# about
+
+- I studied electronics formally, but prefer software
+
+- I was a Python fan, and now Rust
+
+- I am part of a tiny team at https://panoptix.co.za,
+  building a distributed data processing framework
+
+???
+
+- By tiny I mean 3 people, all enthusiastic Rust users
+
+- Company is based in Johannesburg
+
+- As a note, it would be kool to know of others taking such a
+  commitment (full time Rust dev) on the language elsewhere on the
+  continent
+
+---
+class: middle, left
+
+The steps taken to get to a working executable
+
+- parsing -> AST
+- AST processing
+- lowering -> HIR
+- type checking
+- lowering -> MIR
+- borrow checking [+ optimization]
+- translation -> llvm-ir
+- code generation -> object files (.o)
+- linking -> "the executable"
+
+???
+
+That second step, I actually don't know if
+
+---
+class: middle, left
+
+### Parsing
+
+The source code is turned into 'meaningful' structure,
+known as Abstract Syntax Tree (AST).
+Individual parts of this tree are known as tokens.
+
+Examples of tokens:
+
+- StructField
+- WhereClause
+- Block '{}'
+- Arm (of a match)
+- Expr
+
+???
+
+These are the type names in the compiler.
+
+Remember that structs are sometimes composed of fields.
+
+
+---
+class: middle, left
+
+### AST processing
+
+- code elimination (cfg)
+
+- macro expansion
+
+- name resolution
+
+Note that these are not necessarily sequential, and at times work
+together, and sometimes each goes through multiple passes.
+
+---
+class: middle, left
+
+### code elimination
+
+cfg attribute allows for conditional compilation.
+
+This is kool in that you can keep such things, which should ideally be
+minimal, in the same codebase.
+
+A major example is having code meant to be compiled for Windows (for
+example where you accessing certain resources applicable only to that
+OS).
+
+That will be as simple as annotating the code with `#[cfg(windows)]`.
+
+Given that example, what code elimination does is remove that code in
+the case you were compiling for Unix.
+
+???
+
+cfg is equivalent to C/C++ ifdef
+
+---
+class: middle, left
+
+### code elimination
+
+A real example:
+
+```rust
+fn display_human(result: mrh::Output) {
+    #[cfg(windows)]
+    ansi_term::enable_ansi_support().unwrap();
+    print!("{}", result.path.display());
+    ...
+```
+
+???
+
+That example is from a crate I wrote...
+when built for Windows, that cfg annotates code that allows color
+output on a Windows terminal.
+
+
+---
+class: middle, left
+
+### macro expansion
+
+There's a few forms of macros
+
+- Derive, example being to apply Debug implementation to types
+
+- Function-like, examples being `println!` and `assert_eq!`
+
+- Attribute, example being structopt notation
+
+---
+class: middle, left
+
+### macro expansion
+
+Example of Functional-like expansion:
+
+```rust
+    assert_eq!(1, 1);
+```
+
+Following is the code that gets generated (macro expansion) as a result...
+
+---
+class: middle, left
+
+```rust
+match (&1, &1) {
+  (left_val, right_val) => {
+    if !(*left_val == *right_val) {
+      {
+        ::panicking::panic_fmt(
+          <::fmt::Arguments>::new_v1_formatted(
+            &[
+              "assertion failed: `(left == right)`\n left: `",
+              "`,\n right: `",
+              "`",
+            ],
+            &match (&left_val, &right_val) {
+              (arg0, arg1) => [
+                <::fmt::ArgumentV1>::new(arg0, ::fmt::Debug::fmt),
+                <::fmt::ArgumentV1>::new(arg1, ::fmt::Debug::fmt),
+              ],
+[snip]
+```
+???
+
+yeees, hard on the eyes
+
+---
+class: middle, left
+
+### macro expansion
+
+Example of Attribute macro:
+
+```rust
+#[structopt(
+    long = "ignore-untracked",
+    help = "Do not include untracked files in output",
+)]
+ignore_untracked: bool,
+```
+
+???
+
+That generates clap (command line argument parser lib) code
+
+
+---
+class: middle, left
+
+### macro expansion
+
+That generates similar to the following:
+
+``` rust
+let app: structopt::clap::App = ...
+let arg: structopt::clap::Arg = app.arg(
+    structopt::clap::Arg::with_name("ignore_uncommitted_repos")
+        .takes_value(false)
+        .multiple(false)
+        .long("ignore-uncommited-repos")
+        .help("Do not include repos that have no commits"),
+);
+```
+
+---
+class: middle, left
+
+### name resolution
+
+Rust allows you to use the same names to different things,
+even in the same scope.
+
+What name resolution does is doing the disambiguation.
+
+As an example, this code is valid:
+
+```rust
+type x = u32;
+let x: x = 1;
+let y: x = 2;
+```
+
+Also:
+
+- Variable shadowing
+
+- Suggestions for typo fixes
+
+- Suggestions for traits to import
+
+???
+
+Tha nice example is from the compiler guide
+
+---
+class: middle, left
+
+### lowering to HIR
+
+HIR: high-level intermediate representation
+
+Lowering is conversion from one form to something more simple.
+
+In our case, the AST is converted to the HIR
+
+Type checking operates on the HIR.
+
+
+---
+class: middle, left
+
+---
+class: middle, left
+
+---
+class: middle, left
+
+---
+class: middle, left
+
+---
+class: middle, left
+
+---
+class: middle, left
+
+---
+class: middle, left
+
+---
+class: middle, left
+
+---
+class: middle, left
+
+---
+class: middle, left
+
+---
+class: middle, left
+
+---
+class: middle, left
+
+
+# thanks
+
+
+- Guide to Rustc Development (https://github.com/rust-lang-nursery/rustc-guide)
+
+- RustFest Paris 2018, for inspiration (https://paris.rustfest.eu)
+
+- Rust team (https://rust-lang.org/team)
+
+- Rust in Ten Slides (https://github.com/steveklabnik/rust-in-ten-slides)
+
+???
+
+It's was a long time dream to give a talk at a conference, and it took
+RustFest Paris to actually do it.
+
+I find they did a great job of encouraging first-time speakers to
+submit, which I did (and of course got rejected).
+
+I think I proceeded to submit to Rustconf as well,
+then finally to Rust Belt Rust, and scored.
+
+
+    </textarea>
+    <script src="remark-latest.min.js" type="text/javascript">
+    </script>
+    <script type="text/javascript">
+      var slideshow = remark.create();
+    </script>
+  </body>
+</html>
