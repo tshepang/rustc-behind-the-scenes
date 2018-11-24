@@ -183,7 +183,7 @@ class: middle, left
 Example of Functional-like expansion:
 
 ```rust
-    assert_eq!(1, 1);
+assert_eq!(1, 1);
 ```
 
 Following is the code that gets generated (macro expansion) as a result...
@@ -299,42 +299,356 @@ Type checking operates on the HIR.
 ---
 class: middle, left
 
----
-class: middle, left
+### HIR howto
+
+Following is the command that will show what HIR looks like:
+
+    cargo rustc -- -Zunpretty=hir
+
+The data structure of HIR itself is interesting, and you use the
+following command to check it out:
+
+    cargo rustc -- -Zunpretty=hir-tree
+
+???
+
+The unpretty-ness of it is actually curious.
+I mean the output is not pretty, but I don't think that is what was meant.
 
 ---
 class: middle, left
 
----
-class: middle, left
+### digression: RISC-V
+
+- A new ISA, born in 2010
+- It's a more clean design compared the alternatives
+- It's also libre (no royalty/licensing fee)
+
+Note: Rust RISC-V targets has no libstd support,
+so you won't be able to run this on Linux for example.
+
+???
+It was an explicit decision by its designers to avoid issue with
+earlier ISAs
+
+Being libre allows all manner of (motivated) people to play in the CPU
+design space, not just those with sizable pockets.
+
+Those last 2 points, the design and the libre-ness of it made it
+attractive to me.
 
 ---
 class: middle, left
 
----
-class: middle, left
+### one more digression: RISC-V
+There are three base forms:
+
+- RV32I
+- RV64I
+- RV128I
+
+There are called Integer Instruction Sets.
+
+This has instructions to do...
+
+- memory reads/writes
+- simple arithmetic (addition and subtraction)
+- logical operations
+- branching (jumps to other instructions)
+
+As for difference between the 3, RV128I (128-bit) has additional
+instructions comapred to RV64I, which allow it to work with larger
+(128-bit) integers and memory (unimaginable).
+
+RV64I itself will similarly have additional instructions compared to RV32I.
+
+???
+
+Note that all software should be able to run on processors
+implementing any of these 2 base variants.
+
+Most of anything else can be simulated, but that's not good enough,
+because speed.
 
 ---
 class: middle, left
 
----
-class: middle, left
+### last bit of digression: RISC-V
+
+The ISA is also modular, and Rust currently supports 2 variants:
+
+- riscv32imac (official name is RV32IMAC)
+- riscv32imc (official name is RV32IMC)
+
+What are those letters:
+
+- I is the base that all complying implemetations must support, explained above
+- M is Multiply extension (has multiplication and division operations)
+- A is Atomic extension (for atomic memory operations)
+- C is Compressed extension (to reduce code size)
+
+???
+
+A extension support in llvm, which Rust uses to produce the final
+code, is not complete.
+GCC is ahead on this front.
 
 ---
 class: middle, left
 
----
-class: middle, left
+Here is some code
+
+```rust
+#![no_std]
+
+extern crate hifive;
+
+pub fn square(num: u32) -> u32 {
+    num * num
+}
+
+fn main() {
+    square(1983);
+}
+```
+
+???
+
+I chose something simple so that things are clear, but that only
+worked to some extent.
+
+That first line indicates that we are choosing a bare-metal (i.e. no
+OS is to be used).
+
+That second line does some magical things that allow this to be ran on
+a hifive board, which happens to be among the few physical RISC-V
+development boards in production.
+
+Would be kool to see Jonathan (Monotrom fame) play with one of these.
 
 ---
 class: middle, left
 
+### HIR output
+
+```rust
+#![no_std]
+#[prelude_import]
+use core::prelude::v1::*;
+#[macro_use]
+extern crate core;
+#[macro_use]
+extern crate compiler_builtins;
+
+extern crate hifive;
+
+pub fn square(num: u32) -> u32 {
+    num * num
+}
+
+fn main() {
+    square(1983);
+}
+```
+
+???
+
+So, that exposes some things that were hidden, like the libcore, the
+prelude, and compiler builtins.
+
+As for our code, nothing fancy happened, hence it was left
+alone... it's simple enough for HIR purposes.
+
 ---
 class: middle, left
 
+### What happens during HIR stage
+
+- type inference
+
+- type checking
+
+- trait resolution
+
+???
+This list is not comprehensive. To see the true detail, you must take
+a look the HIR tree
+
+---
+class: middle, left
+
+### Snippet of hir-tree output
+
+How the body of the `square` function is represented (`num * num`)
+
+```rust
+BodyId {
+    node_id: NodeId(24)
+}: Body {
+    arguments: [
+        Arg {
+            pat: pat(9: num),
+            id: NodeId(8),
+            hir_id: HirId {
+                owner: DefIndex(0:5),
+                local_id: ItemLocalId(6)
+            }
+        }
+    ],
+    value: expr(24: { num * num }),
+    is_generator: false
+},
+```
+
+???
+
+The sample code produced a 500-line data structure, whose top-level
+name is Crate, It's actually Debug println of the data structure that
+the compiler operates on.
+
+Anyways, the snippet above represents the body part of the function 'square`.
+
+---
+class: middle, left
+
+### MIR
+
+MIR: medium-level intermediate representation
+
+This is an even more simple representation of HIR.
+As an example, loops and matches are replaced with gotos.
+
+???
+It's called medium because it sits between HIR and llvm-ir
+
+gotos are pretty much how assembly instructions do branching
+(as you will see shortly)
+
+---
+class: middle, left
+
+### what happens on MIR
+
+The main part that happens is borrow checking, and following is some
+of what that entails:
+
+- vars can't be used uninitialised
+- vars can't be accessed once moved
+- vars can't be moved while still borrowed
+- vars can't be accessed while still mutably borrowed
+
+What else:
+- pre-llvm optimization
+- output is llvm-ir (Intermediate Representation)
+
+???
+borrow checking is a critical part of what makes Rust a
+special and unique snowflake... compile time memory safety
+
+That list is stolen from the rustc guide
+
+Actually not sure what comes out of MIR stage is llvm-ir or the
+bitcode, which is the binary representation of that ir.
+
+---
+class: middle, left
+
+### MIR output
+
+```rust
+fn square(_1: u32) -> u32{
+    let mut _0: u32;
+    let mut _2: u32;
+    let mut _3: u32;
+    let mut _4: (u32, bool);
+
+    bb0: {
+        StorageLive(_2);
+        _2 = _1;
+        StorageLive(_3);
+        _3 = _1;
+        _4 = CheckedMul(move _2, move _3);
+        assert(!move (_4.1: bool), "attempt to multiply with overflow") -> bb1;
+    }
+
+    bb1: {
+        _0 = move (_4.0: u32);
+        StorageDead(_3);
+        StorageDead(_2);
+        return;
+    }
+}
+```
+
+???
+Note pretty, but the simpler representation makes things more easy to
+perform the operations mentioned before.
+
+Scanning this, looking inside the bb0 block, where the action is
+taking place.
+
+---
+class: middle, left
+
+### llvm-ir output
+
+Just a snippet...
+
+```llvm-ir
+define internal i32 @square(i32 %num) unnamed_addr #0 {
+start:
+  %0 = call { i32, i1 } @llvm.umul.with.overflow.i32(i32 %num, i32 %num)
+  %1 = extractvalue { i32, i1 } %0, 0
+  %2 = extractvalue { i32, i1 } %0, 1
+  %3 = call i1 @llvm.expect.i1(i1 %2, i1 false)
+  br i1 %3, label %panic, label %bb1
+}
+```
+
+???
+Output of that is rather verbose... 75 lines
+
+---
+class: middle, left
+
+### and finally, assembly
+
+Just a snippet...
+
+```
+square:
+	addi	sp, sp, -16
+	sw	ra, 12(sp)
+	mul	a1, a0, a0
+	mv	a2, a0
+	mulhu	a0, a0, a0
+	mv	a3, zero
+	sw	a2, 8(sp)
+	sw	a1, 4(sp)
+	bne	a0, a3, .LBB1_2
+	j	.LBB1_1
+```
+
+The calling code:
+
+```
+main:
+	addi	sp, sp, -16
+	sw	ra, 12(sp)
+	addi	a0, zero, 1983
+	call	square
+	sw	a0, 8(sp)
+	j	.LBB2_1
+```
+
+???
+Note that there was cheating involved here, where I demangled some
+stuff, for the sake of clarity
+
+---
+class: middle, left
 
 # thanks
-
 
 - Guide to Rustc Development (https://github.com/rust-lang-nursery/rustc-guide)
 
