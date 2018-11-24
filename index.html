@@ -477,36 +477,15 @@ a look the HIR tree
 ---
 class: middle, left
 
-### Snippet of hir-tree output
-
-How the body of the `square` function is represented (`num * num`)
-
-```rust
-BodyId {
-    node_id: NodeId(24)
-}: Body {
-    arguments: [
-        Arg {
-            pat: pat(9: num),
-            id: NodeId(8),
-            hir_id: HirId {
-                owner: DefIndex(0:5),
-                local_id: ItemLocalId(6)
-            }
-        }
-    ],
-    value: expr(24: { num * num }),
-    is_generator: false
-},
-```
-
-???
+### hir-tree output
 
 The sample code produced a 500-line data structure, whose top-level
-name is Crate, It's actually Debug println of the data structure that
+name is Crate.
+
+It's actually Debug println of the data structure that
 the compiler operates on.
 
-Anyways, the snippet above represents the body part of the function 'square`.
+    cargo rustc -- -Zunpretty=hir-tree
 
 ---
 class: middle, left
@@ -611,34 +590,32 @@ Output of that is rather verbose... 75 lines
 ---
 class: middle, left
 
-### and finally, assembly
+### and... assembly
 
 Just a snippet...
 
 ```
 square:
-	addi	sp, sp, -16
-	sw	ra, 12(sp)
-	mul	a1, a0, a0
-	mv	a2, a0
-	mulhu	a0, a0, a0
-	mv	a3, zero
-	sw	a2, 8(sp)
-	sw	a1, 4(sp)
-	bne	a0, a3, .LBB1_2
-	j	.LBB1_1
+	addi   sp, sp, -16
+	sw     ra, 12(sp)
+	mul    a1, a0, a0
+	mv     a2, a0
+	mulhu  a0, a0, a0
+	mv     a3, zero
+	sw     a2, 8(sp)
+	sw     a1, 4(sp)
+	bne    a0, a3, .LBB1_2
 ```
 
 The calling code:
 
 ```
 main:
-	addi	sp, sp, -16
-	sw	ra, 12(sp)
-	addi	a0, zero, 1983
-	call	square
-	sw	a0, 8(sp)
-	j	.LBB2_1
+	addi   sp, sp, -16
+	sw     ra, 12(sp)
+	addi   a0, zero, 1983
+	call   square
+	sw     a0, 8(sp)
 ```
 
 ???
@@ -648,7 +625,14 @@ stuff, for the sake of clarity
 ---
 class: middle, left
 
-# thanks
+# The final steps
+
+- llvm takes that assembly and generates binaries output
+
+- It the finally does linking, where we finally have something we can execute
+
+---
+### thanks
 
 - Guide to Rustc Development (https://github.com/rust-lang-nursery/rustc-guide)
 
