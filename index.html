@@ -124,8 +124,7 @@ class: middle, left
 
 cfg attribute allows for conditional compilation.
 
-This is kool in that you can keep such things, which should ideally be
-minimal, in the same codebase.
+This is kool in that you can keep such things in the same codebase.
 
 A major example is having code meant to be compiled for Windows (for
 example where you accessing certain resources applicable only to that
@@ -619,6 +618,11 @@ main:
 ```
 
 ???
+Total output of generated assembly is 120 lines.
+
+Note also that we've so far been looking at non-optimized code, and it
+would be lots shorter (and of course faster)
+
 Note that there was cheating involved here, where I demangled some
 stuff, for the sake of clarity
 
@@ -627,9 +631,13 @@ class: middle, left
 
 # The final steps
 
-- llvm takes that assembly and generates binaries output
+- llvm takes that assembly and generates binaries output (in the form
+  of .o files)
 
-- It the finally does linking, where we finally have something we can execute
+- It then finally does the linking (using lld),
+  where we finally have something we can execute
+
+- Note that the linker could also be binutils (ld)
 
 ---
 ### thanks
